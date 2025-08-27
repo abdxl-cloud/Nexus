@@ -21,7 +21,7 @@ class BrowseResponse(BaseModel):
     success: bool
     error: Optional[str] = None
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "browser-runner"}
