@@ -27,8 +27,11 @@ class User(Base):
     __tablename__ = 'users'
     
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    email = Column(Text)
+    name = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
     # Relationships
     threads = relationship("Thread", back_populates="user", cascade="all, delete-orphan")
     
@@ -41,8 +44,10 @@ class Thread(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'))
+    title = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
     # Relationships
     user = relationship("User", back_populates="threads")
     messages = relationship("Message", back_populates="thread", cascade="all, delete-orphan")
@@ -61,6 +66,7 @@ class Message(Base):
     role = Column(Text, nullable=False)
     content = Column(JSONB, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Add check constraint for role
     __table_args__ = (

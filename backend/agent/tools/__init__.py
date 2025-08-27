@@ -5,9 +5,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Union
 from pydantic import BaseModel
 
-from .web_search import WebSearchTool
-from .browser import BrowserTool
-
 logger = logging.getLogger(__name__)
 
 # Pydantic Models
@@ -53,6 +50,11 @@ class BaseTool(ABC):
             "description": self.description,
             "schema": self.schema
         }
+    
+# Import concrete tools after base class definitions to avoid circular imports
+from .web_search import WebSearchTool
+from .browser import BrowserTool
+
 
 def get_default_tools() -> List[BaseTool]:
     """Get list of default tools"""

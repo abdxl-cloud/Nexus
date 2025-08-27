@@ -10,7 +10,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
-from backend.db.database import get_db
+from backend.db import get_db
 from backend.db.models import Thread, Message, Run
 from backend.agent.tools import get_default_tools, ToolCall, ToolResult
 

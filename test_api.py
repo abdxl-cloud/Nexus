@@ -3,12 +3,15 @@
 Test script for the new API endpoints
 """
 
+import os
 import requests
 import json
 import time
 from typing import Dict, Any
 
-BASE_URL = "http://localhost:8000/api"
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
+# Router base URL (with /api prefix)
+BASE_URL = f"{API_BASE_URL}/api"
 
 def test_create_thread() -> str:
     """Test creating a new thread"""
@@ -89,7 +92,7 @@ def test_health_check():
     """Test health check endpoint"""
     print("\n=== Testing GET /health ===")
     
-    response = requests.get(f"{BASE_URL}/health")
+    response = requests.get(f"{API_BASE_URL}/health")
     print(f"Status: {response.status_code}")
     print(f"Response: {response.json()}")
     
@@ -101,7 +104,8 @@ def test_health_check():
 def main():
     """Run all tests"""
     print("Starting API endpoint tests...")
-    print(f"Base URL: {BASE_URL}")
+    print(f"API base URL: {API_BASE_URL}")
+    print(f"Router base URL: {BASE_URL}")
     
     # Test health check first
     test_health_check()
