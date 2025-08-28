@@ -84,6 +84,52 @@ async def bootstrap_database():
                     Base.metadata.create_all(bind=engine)
             else:
                 print("Database tables already exist.")
+
+                # Ensure timestamp columns exist on users table
+                col_result = conn.execute(text(
+                    """
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'users'
+                    """
+                ))
+                columns = {row[0] for row in col_result}
+
+                alter_statements = []
+                if 'created_at' not in columns:
+                    alter_statements.append(
+                        "ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+                    )
+                if 'updated_at' not in columns:
+                    alter_statements.append(
+                        "ALTER TABLE users ADD COLUMN updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+                    )
+
+                for stmt in alter_statements:
+                    conn.execute(text(stmt))
+
+                if alter_statements:
+                    conn.commit()
+                    print("Added missing timestamp columns to users table.")
+
+                # Ensure updated_at trigger exists for users table
+                trigger_result = conn.execute(text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_trigger WHERE tgname = 'update_users_updated_at'
+                    )
+                    """
+                ))
+                trigger_exists = trigger_result.scalar()
+                if not trigger_exists:
+                    conn.execute(text(
+                        """
+                        CREATE TRIGGER update_users_updated_at
+                        BEFORE UPDATE ON users
+                        FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+                        """
+                    ))
+                    conn.commit()
+                    print("Created update_users_updated_at trigger for users table.")
                 
     except Exception as e:
         print(f"Database bootstrap error: {e}")
