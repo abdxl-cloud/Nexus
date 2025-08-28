@@ -84,6 +84,16 @@ async def bootstrap_database():
                     Base.metadata.create_all(bind=engine)
             else:
                 print("Database tables already exist.")
+
+                # Ensure 'result' column exists in 'runs' table
+                result_column = conn.execute(text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name='runs' AND column_name='result'"
+                )).fetchone()
+                if not result_column:
+                    conn.execute(text("ALTER TABLE runs ADD COLUMN result TEXT"))
+                    conn.commit()
+                    print("Added 'result' column to runs table.")
                 
     except Exception as e:
         print(f"Database bootstrap error: {e}")
