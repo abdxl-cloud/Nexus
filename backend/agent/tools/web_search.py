@@ -7,7 +7,7 @@ import httpx
 from typing import Dict, Any, List, Optional
 
 from . import BaseTool, ToolResult
-from config import get_settings
+from backend.config import get_settings  # Fixed import
 
 logger = logging.getLogger(__name__)
 
@@ -162,3 +162,4 @@ class WebSearchTool(BaseTool):
         """Legacy execute method for backward compatibility"""
         result = await self.__call__(query=query, top_k=max_results)
         return result.data if result.ok else {"error": "Search failed", "results": []}
+    

@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from db.models import User, Thread, Message, Run
+from backend.db.models import User, Thread, Message, Run  # Fixed import
 
 # Type definitions
 RunEvent = Dict[str, Any]
@@ -251,3 +251,4 @@ def validate_uuid(uuid_string: str) -> bool:
         return True
     except ValueError:
         return False
+    

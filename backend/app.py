@@ -5,9 +5,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-from api import router
-from config import get_settings
-from db.models import engine, Base
+from backend.api import router  # Fixed import
+from backend.config import get_settings  # Fixed import
+from backend.db.models import engine, Base  # Fixed import
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -171,3 +171,4 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG
     )
+    

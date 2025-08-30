@@ -6,7 +6,10 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from datetime import datetime
 import uuid
 from typing import Optional, List, Dict, Any
-from config import settings
+from backend.config import get_settings  # Fixed import
+
+# Get settings
+settings = get_settings()
 
 Base = declarative_base()
 

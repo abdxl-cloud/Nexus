@@ -9,9 +9,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from agent import AgentLoop
-from db.models import get_db, User, Thread, Message, Run, SessionLocal
-from config import get_settings
+from backend.agent import AgentLoop  # Fixed import
+from backend.db.models import get_db, User, Thread, Message, Run, SessionLocal  # Fixed import
+from backend.config import get_settings  # Fixed import
 from .utils import (
     run_manager,
     validate_role,
