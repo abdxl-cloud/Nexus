@@ -15,13 +15,12 @@ A minimal, runnable MVP implementation of a "Suna-like" AI agent with ReAct-styl
 
 ## Quick Start
 
-### Option 1: Docker with Local CoexistAI (Recommended)
+### Option 1: Docker (with bundled CoexistAI)
 
 ```bash
-# Clone CoexistAI into ./coexistai directory
-git clone https://github.com/SPThole/CoexistAI.git coexistai
-
 # Start all services including CoexistAI
+# Set TAVILY_API_KEY for real web search results
+export TAVILY_API_KEY=your_tavily_api_key
 make up
 
 # The API will be available at:
@@ -34,10 +33,11 @@ make up
 ### Option 2: Docker with Remote CoexistAI
 
 ```bash
-# Set COEXISTAI_BASE_URL to your hosted instance
+# Set COEXISTAI_BASE_URL (and optionally COEXISTAI_API_KEY) to your hosted instance
 export COEXISTAI_BASE_URL=https://your-coexistai-instance.com
+# export COEXISTAI_API_KEY=your_api_key
 
-# Start services without local CoexistAI
+# Start services
 make up
 ```
 
@@ -63,8 +63,7 @@ curl -X POST http://localhost:8000/threads/{thread_id}/messages \
   -H "Content-Type: application/json" \
   -d '{"role": "user", "content": "Search for the latest AI news"}'
 
-# Stream run events (SSE)
-curl -N http://localhost:8000/runs/{run_id}/events
+@@ -68,75 +68,65 @@ curl -N http://localhost:8000/runs/{run_id}/events
 ```
 
 ### Server-Sent Events (SSE) Format
@@ -90,31 +89,21 @@ data: {"type": "run_completed", "status": "completed"}
 
 ## CoexistAI Integration
 
-**Important**: This agent uses CoexistAI for web search functionality. You have two options:
+**Important**: This agent uses CoexistAI for web search functionality. The Docker setup starts a CoexistAI container automatically using the published `spthole/coexistai` image.
 
-### Option A: Clone CoexistAI locally (Recommended for development)
+To get real search results, set the `TAVILY_API_KEY` environment variable before running `make up`:
 
 ```bash
-# 1. Clone CoexistAI into the ./coexistai directory
-git clone https://github.com/SPThole/CoexistAI.git coexistai
-
-# 2. Start all services including CoexistAI
+export TAVILY_API_KEY=your_tavily_api_key
 make up
-
-# CoexistAI will be available at http://localhost:8001
-# The API will automatically use http://coexistai:8000 internally
 ```
 
-### Option B: Use hosted CoexistAI instance
+If you want to use a hosted CoexistAI instance instead, set `COEXISTAI_BASE_URL` (and optionally `COEXISTAI_API_KEY`) before starting the services:
 
 ```bash
-# 1. Set the COEXISTAI_BASE_URL environment variable
 export COEXISTAI_BASE_URL=https://your-coexistai-instance.com
-
-# 2. Start services without local CoexistAI
+# export COEXISTAI_API_KEY=your_api_key
 make up
-
-# The API will use your hosted CoexistAI instance
 ```
 
 **Note**: If CoexistAI is not available, the agent will fall back to a stub implementation that returns mock search results.

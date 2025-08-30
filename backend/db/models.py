@@ -87,6 +87,7 @@ class Run(Base):
     thread_id = Column(UUID(as_uuid=True), ForeignKey('threads.id', ondelete='CASCADE'), nullable=False)
     status = Column(Text, nullable=False)
     tokens_used = Column(Integer, default=0)
+    result = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     

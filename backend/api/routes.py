@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from agent import AgentLoop
-from db.models import get_db, User, Thread, Message, Run
+from db.models import get_db, User, Thread, Message, Run, SessionLocal
 from config import get_settings
 from .utils import (
     run_manager,
@@ -53,62 +53,65 @@ def get_or_create_user(db: Session, user_id: Optional[str] = None) -> User:
     # Create new user using utility function
     return create_user_with_defaults(db, user_id)
 
-async def execute_agent_run(run_id: str, thread_id: str, user_message: str, db: Session):
-    """Execute agent run in background"""
+async def execute_agent_run(run_id: str, thread_id: str, user_message: str):
+    """Execute agent run in background using its own database session"""
+    db = SessionLocal()
     try:
         # Update run status to running
         update_run_in_db(db, run_id, "running")
-        
+
         # Store run data for SSE streaming using run manager
         run_manager.create_run_data(run_id, thread_id, sanitize_content(user_message))
-        
+
         # Initialize agent loop
         agent_loop = AgentLoop()
-        
+
         # Collect all agent responses
         agent_responses = []
         async for response in agent_loop.run(user_message):
             # Add token events
             if "content" in response:
                 run_manager.add_event(run_id, "token", response["content"])
-            
+
             # Add tool events
             if "tool_call" in response:
                 run_manager.add_event(run_id, "tool", response["tool_call"])
-            
+
             if "tool_result" in response:
                 run_manager.add_event(run_id, "tool", response["tool_result"])
-            
+
             agent_responses.append(response)
-        
+
         # Get final response content
         final_content = ""
         for response in agent_responses:
             if "content" in response:
                 final_content += response["content"]
-        
+
         # Sanitize final content
         final_content = sanitize_content(final_content)
-        
+
         # Create assistant message in database
         create_message_with_defaults(db, thread_id, "assistant", final_content)
-        
+
         # Add final done event
         run_manager.add_event(run_id, "done", {
             "message": final_content,
             "status": "completed"
         })
-        
+
         # Update run status to completed
         update_run_in_db(db, run_id, "completed", final_content)
         run_manager.update_status(run_id, "completed")
-        
+
     except Exception as e:
         # Handle errors
         error_message = f"Error executing run: {str(e)}"
         run_manager.add_event(run_id, "error", {"error": error_message})
         run_manager.update_status(run_id, "failed")
         update_run_in_db(db, run_id, "failed", error_message)
+    finally:
+        db.close()
 
 # API Endpoints
 @router.post("/threads", response_model=CreateThreadResponse)
@@ -143,16 +146,16 @@ async def create_message(thread_id: str, request: CreateMessageRequest, db: Sess
         sanitized_content = sanitize_content(request.content)
         
         # Create message record
-        message = create_message_with_defaults(db, thread_id, request.role, sanitized_content)
-        
+        create_message_with_defaults(db, thread_id, request.role, sanitized_content)
+
         # If it's a user message, create and start a run
         if request.role == "user":
             # Create run record
             run = create_run_with_defaults(db, thread_id, "queued")
-            
+
             # Start background task to execute the run
-            asyncio.create_task(execute_agent_run(run.id, thread_id, sanitized_content, db))
-            
+            asyncio.create_task(execute_agent_run(run.id, thread_id, sanitized_content))
+
             return CreateMessageResponse(run_id=run.id)
         else:
             # For assistant messages, create a dummy run (or handle differently)
@@ -178,7 +181,7 @@ async def get_run_events(run_id: str, request: Request, db: Session = Depends(ge
         
         last_event_index = 0
         last_heartbeat = time.time()
-        
+         
         try:
             while True:
                 # Check if client disconnected

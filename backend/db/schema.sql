@@ -2,7 +2,7 @@
 -- PostgreSQL schema for the suna_lite agent system
 
 -- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Create updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS runs (
     thread_id UUID REFERENCES threads(id) ON DELETE CASCADE,
     status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'error')),
     tokens_used INTEGER DEFAULT 0,
+    result TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );

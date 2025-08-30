@@ -12,7 +12,7 @@ help:
 dev:
 	cd backend && python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 
-# Docker compose up with build
+# Docker compose up with build (includes CoexistAI service)
 up:
 	docker compose up --build
 
