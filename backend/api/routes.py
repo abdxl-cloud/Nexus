@@ -66,30 +66,18 @@ async def execute_agent_run(run_id: str, thread_id: str, user_message: str):
         # Initialize agent loop
         agent_loop = AgentLoop()
 
-        # Collect all agent responses
-        agent_responses = []
-        async for response in agent_loop.run(user_message):
-            # Add token events
-            if "content" in response:
-                run_manager.add_event(run_id, "token", response["content"])
+        final_response, event_stream = await agent_loop.run_agent(uuid.UUID(thread_id), user_message)
+        async for event_json in event_stream:
+            event = json.loads(event_json)
+            if event.get("type") == "message":
+                run_manager.add_event(run_id, "token", event.get("content", ""))
+            elif event.get("type") == "tool_call":
+                run_manager.add_event(run_id, "tool", event.get("tool_call"))
+            elif event.get("type") == "tool_result":
+                run_manager.add_event(run_id, "tool", event.get("result"))
 
-            # Add tool events
-            if "tool_call" in response:
-                run_manager.add_event(run_id, "tool", response["tool_call"])
-
-            if "tool_result" in response:
-                run_manager.add_event(run_id, "tool", response["tool_result"])
-
-            agent_responses.append(response)
-
-        # Get final response content
-        final_content = ""
-        for response in agent_responses:
-            if "content" in response:
-                final_content += response["content"]
-
-        # Sanitize final content
-        final_content = sanitize_content(final_content)
+        # Sanitize and store final response
+        final_content = sanitize_content(final_response)
 
         # Create assistant message in database
         create_message_with_defaults(db, thread_id, "assistant", final_content)
@@ -124,7 +112,8 @@ async def create_thread(request: CreateThreadRequest, db: Session = Depends(get_
         # Create thread
         thread = create_thread_with_defaults(db, user.id)
         
-        return CreateThreadResponse(thread_id=thread.id)
+        # Pydantic response model expects a string, so cast the UUID
+        return CreateThreadResponse(thread_id=str(thread.id))
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create thread: {str(e)}")
@@ -156,11 +145,11 @@ async def create_message(thread_id: str, request: CreateMessageRequest, db: Sess
             # Start background task to execute the run
             asyncio.create_task(execute_agent_run(run.id, thread_id, sanitized_content))
 
-            return CreateMessageResponse(run_id=run.id)
+            return CreateMessageResponse(run_id=str(run.id))
         else:
             # For assistant messages, create a dummy run (or handle differently)
             run = create_run_with_defaults(db, thread_id, "completed")
-            return CreateMessageResponse(run_id=run.id)
+            return CreateMessageResponse(run_id=str(run.id))
         
     except HTTPException:
         raise

@@ -32,6 +32,20 @@ fi
 
 echo "✅ Prerequisites check passed"
 
+# Ensure SearxNG is running
+echo "🔍 Checking SearxNG..."
+if ! curl --fail http://localhost:8100 >/dev/null 2>&1; then
+    if ! docker ps --format '{{.Names}}' | grep -q '^searxng$'; then
+        echo "🚀 Starting SearxNG..."
+        docker run -d --name searxng -p 8100:8080 searxng/searxng >/dev/null
+    else
+        echo "🔄 SearxNG container exists but isn't responding"
+    fi
+else
+    echo "✅ SearxNG already running"
+fi
+
+
 # Clone CoexistAI if it doesn't exist
 if [ ! -d "coexistai" ]; then
     echo "📥 Cloning CoexistAI repository..."
@@ -42,6 +56,69 @@ else
     echo "🔄 Pulling latest changes..."
     cd coexistai && git pull && cd ..
 fi
+
+# Patch CoexistAI files to avoid requiring Docker inside the container
+if [ -f "coexistai/utils/utils.py" ]; then
+    python3 - <<'PY'
+import pathlib, re
+p = pathlib.Path('coexistai/utils/utils.py')
+text = p.read_text()
+pattern = re.compile(r"def is_searxng_running\(\):.*?return bool\(result\.stdout.strip\(\)\)", re.S)
+if pattern.search(text):
+    if "import requests" not in text:
+        text = "import requests\n" + text
+    text = pattern.sub(
+        'def is_searxng_running(host="host.docker.internal", port=8100):\n'
+        '    try:\n'
+        '        response = requests.get(f"http://{host}:{port}", timeout=2)\n'
+        '        return response.status_code == 200\n'
+        '    except Exception:\n'
+        '        return False', text)
+    p.write_text(text)
+PY
+fi
+
+if [ -f "coexistai/app.py" ]; then
+    python3 - <<'PY'
+import pathlib, re
+path = pathlib.Path('coexistai/app.py')
+text = path.read_text()
+block_pat = re.compile(r"if not is_searxng_running\(\):\n\s+subprocess.run\([\s\S]*?\)\nelse:\n\s+print\(\"SearxNG docker container is already running\.\"\)")
+replacement = ('if not is_searxng_running():\n'
+               '    print("SearxNG is not running; skipping automatic startup.")\n'
+               'else:\n'
+               '    print("SearxNG docker container is already running.")')
+if block_pat.search(text):
+    text = block_pat.sub(replacement, text)
+const_pat = re.compile(r"from model_config import \*\n")
+if 'HOST_SEARXNG' not in text:
+    text = const_pat.sub(
+        "from model_config import *\nHOST_SEARXNG = 'host.docker.internal'\nPORT_NUM_SEARXNG = 8100\n",
+        text,
+    )
+path.write_text(text)
+
+# Prepend import os if missing
+if 'import os' not in text:
+    text = 'import os\n' + text
+
+# Default USER_AGENT to avoid warnings
+if "os.environ.setdefault('USER_AGENT'" not in text:
+    text = text.replace('import os\n', "import os\nos.environ.setdefault('USER_AGENT', os.getenv('USER_AGENT', 'suna-lite'))\n", 1)
+
+# Ensure a basic /health endpoint exists
+if "@app.get('/health')" not in text:
+    app_pat = re.compile(r"app = FastAPI\([^\n]*\)\n")
+    m = app_pat.search(text)
+    if m:
+        insert = m.group(0) + "\n@app.get('/health')\nasync def health_check():\n    return {'status': 'ok'}\n"
+        text = text[:m.start()] + insert + text[m.end():]
+
+path.write_text(text)
+PY
+fi
+
+
 
 # Copy the Dockerfile template to CoexistAI directory
 echo "🐳 Setting up CoexistAI Docker configuration..."
@@ -76,7 +153,8 @@ RUN pip install --no-cache-dir --upgrade pip \
         aiofiles==23.2.1 \
         pydantic==2.5.0 \
         pydantic-settings==2.0.3; \
-    fi
+    fi \
+ && pip install --no-cache-dir markitdown
 
 # Copy app
 COPY . .
@@ -106,9 +184,15 @@ RUN [ -f app.py ] || printf "%s\n" \
   "    uvicorn.run(app, host='0.0.0.0', port=8000)" \
   > app.py
 
-# Non-root
-RUN groupadd -r appuser && useradd -r -g appuser appuser && chown -R appuser:appuser /app
+# Non-root user and cache directory
+RUN groupadd -r appuser \
+ && useradd -m -r -g appuser appuser \
+ && mkdir -p /app/hf_cache \
+ && chown -R appuser:appuser /app /home/appuser /app/hf_cache
 USER appuser
+ENV HOME=/home/appuser \
+    HF_HOME=/app/hf_cache \
+    TRANSFORMERS_CACHE=/app/hf_cache
 
 EXPOSE 8000
 
@@ -127,6 +211,14 @@ import os
 openai_api_key = os.getenv("OPENAI_API_KEY", "")
 google_api_key = os.getenv("GOOGLE_API_KEY", "")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+# Application configuration
+HOST_APP = os.getenv("HOST_APP", "0.0.0.0")
+PORT_NUM_APP = int(os.getenv("PORT_NUM_APP", "8000"))
+
+# SearxNG configuration
+HOST_SEARXNG = os.getenv("HOST_SEARXNG", "host.docker.internal")
+PORT_NUM_SEARXNG = int(os.getenv("PORT_NUM_SEARXNG", "8100"))
 
 # Choose the best available model
 if openai_api_key:
@@ -147,6 +239,17 @@ else:
     llm_model = "mock-model"
     api_key = ""
 
+llm_api_key = api_key
+
+if google_api_key:
+    embedding_model_name = "text-embedding-004"
+    embed_mode = "google"
+    embed_kwargs = {"api_key": google_api_key}
+else:
+    embedding_model_name = "nomic-ai/nomic-embed-text-v1"
+    embed_mode = "infinity_emb"
+    embed_kwargs = {}
+
 model_config = {
     "llm_model_name": llm_model,
     "llm_type": llm_type,
@@ -156,14 +259,21 @@ model_config = {
         "max_tokens": None,
         "timeout": None,
         "max_retries": 2,
-        "api_key": api_key,
+        "api_key": llm_api_key,
     },
-    "embedding_model_name": "text-embedding-ada-002" if openai_api_key else "nomic-ai/nomic-embed-text-v1",
-    "embed_kwargs": {},
-    "embed_mode": "openai" if openai_api_key else "infinity_emb",
+
+    "embed_kwargs": embed_kwargs,
+    "embed_mode": embed_mode,
     "cross_encoder_name": "BAAI/bge-reranker-base"
 }
 
+openai_compatible = {
+    "openai": "https://api.openai.com/v1",
+    "google": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "anthropic": "https://api.anthropic.com/v1",
+    "local": "http://127.0.0.1:1234/v1",
+    "others": "https://openrouter.ai/api/v1",
+}
 print(f"CoexistAI configured with LLM type: {llm_type}, model: {llm_model}")
 EOF
 
@@ -195,28 +305,28 @@ if [ -f ".env" ]; then
         if grep -q "^OPENAI_API_KEY=.*[^=]" .env; then
             if ! grep -q "^OPENAI_API_KEY=your_openai_api_key_here" .env; then
                 echo "✅ OpenAI API key configured"
-                ((api_key_count++))
+                ((api_key_count+=1))
             fi
         fi
         
         if grep -q "^TAVILY_API_KEY=.*[^=]" .env; then
             if ! grep -q "^TAVILY_API_KEY=your_tavily_api_key_here" .env; then
                 echo "✅ Tavily API key configured"
-                ((api_key_count++))
+                ((api_key_count+=1))
             fi
         fi
         
         if grep -q "^GOOGLE_API_KEY=.*[^=]" .env; then
             if ! grep -q "^GOOGLE_API_KEY=your_google_api_key_here" .env; then
                 echo "✅ Google API key configured"
-                ((api_key_count++))
+                ((api_key_count+=1))
             fi
         fi
         
         if grep -q "^ANTHROPIC_API_KEY=.*[^=]" .env; then
             if ! grep -q "^ANTHROPIC_API_KEY=your_anthropic_api_key_here" .env; then
                 echo "✅ Anthropic API key configured"
-                ((api_key_count++))
+                ((api_key_count+=1))
             fi
         fi
         
