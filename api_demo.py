@@ -35,7 +35,7 @@ def test_create_message(thread_id: str) -> str:
     
     message_data = {
         "role": "user",
-        "content": "Hello! Can you help me with a simple task?"
+        "content": "What is the population of the United States of America?"
     }
     
     response = requests.post(

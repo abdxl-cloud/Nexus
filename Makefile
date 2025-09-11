@@ -43,9 +43,9 @@ clean:
 # Run API tests
 test:
 	@if [ -f "test_api.py" ]; then \
-		python test_api.py; \
+		python api_demo.py; \
 	else \
-		echo "❌ test_api.py not found"; \
+		echo "❌ api_demo.py not found"; \
 	fi
 
 # Quick health check

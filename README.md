@@ -29,7 +29,8 @@ make up
 # 1. Clones CoexistAI repository
 # 2. Creates proper Docker configuration
 # 3. Sets up all services
-# 4. Starts the complete stack
+# 4. Starts a SearxNG search container on port 8100 if needed
+# 5. Starts the complete stack
 ```
 
 ### Manual Setup (Alternative)
@@ -56,6 +57,7 @@ After running `make up`, you'll have:
 - **CoexistAI**: http://localhost:8001 (Web Search Service)
 - **Runner**: http://localhost:8080 (Browser Automation)
 - **PostgreSQL**: localhost:5432 (Database)
+- **SearxNG**: http://localhost:8100 (Search engine)
 
 ## API Usage
 
@@ -171,6 +173,7 @@ The enhanced setup process:
 4. **Sets Up Configuration**: Creates model_config.py with smart API key detection
 5. **Configures Health Checks**: Adds proper health endpoints for Docker
 6. **Creates .env Template**: Sets up environment configuration if needed
+7. **Launches SearxNG**: Automatically starts a SearxNG container if none is running
 
 ## API Endpoints
 

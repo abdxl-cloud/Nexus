@@ -13,10 +13,11 @@ logger = logging.getLogger(__name__)
 
 class WebSearchTool(BaseTool):
     """Tool for performing web searches via CoexistAI or fallback"""
-    
+
     def __init__(self):
         self.settings = get_settings()
-        super().__init__()
+        # Explicitly set the externally visible name to match the schema
+        super().__init__(name="web_search")
         
     def _get_description(self) -> str:
         """Return tool description"""

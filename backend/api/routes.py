@@ -66,30 +66,18 @@ async def execute_agent_run(run_id: str, thread_id: str, user_message: str):
         # Initialize agent loop
         agent_loop = AgentLoop()
 
-        # Collect all agent responses
-        agent_responses = []
-        async for response in agent_loop.run(user_message):
-            # Add token events
-            if "content" in response:
-                run_manager.add_event(run_id, "token", response["content"])
+        final_response, event_stream = await agent_loop.run_agent(uuid.UUID(thread_id), user_message)
+        async for event_json in event_stream:
+            event = json.loads(event_json)
+            if event.get("type") == "message":
+                run_manager.add_event(run_id, "token", event.get("content", ""))
+            elif event.get("type") == "tool_call":
+                run_manager.add_event(run_id, "tool", event.get("tool_call"))
+            elif event.get("type") == "tool_result":
+                run_manager.add_event(run_id, "tool", event.get("result"))
 
-            # Add tool events
-            if "tool_call" in response:
-                run_manager.add_event(run_id, "tool", response["tool_call"])
-
-            if "tool_result" in response:
-                run_manager.add_event(run_id, "tool", response["tool_result"])
-
-            agent_responses.append(response)
-
-        # Get final response content
-        final_content = ""
-        for response in agent_responses:
-            if "content" in response:
-                final_content += response["content"]
-
-        # Sanitize final content
-        final_content = sanitize_content(final_content)
+        # Sanitize and store final response
+        final_content = sanitize_content(final_response)
 
         # Create assistant message in database
         create_message_with_defaults(db, thread_id, "assistant", final_content)
@@ -108,8 +96,8 @@ async def execute_agent_run(run_id: str, thread_id: str, user_message: str):
         # Handle errors
         error_message = f"Error executing run: {str(e)}"
         run_manager.add_event(run_id, "error", {"error": error_message})
-        run_manager.update_status(run_id, "failed")
-        update_run_in_db(db, run_id, "failed", error_message)
+        run_manager.update_status(run_id, "error")
+        update_run_in_db(db, run_id, "error", error_message)
     finally:
         db.close()
 
@@ -124,10 +112,11 @@ async def create_thread(request: CreateThreadRequest, db: Session = Depends(get_
         # Create thread
         thread = create_thread_with_defaults(db, user.id)
         
-        return CreateThreadResponse(thread_id=thread.id)
+        # Pydantic response model expects a string, so cast the UUID
+        return CreateThreadResponse(thread_id=str(thread.id))
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create thread: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"error to create thread: {str(e)}")
 
 @router.post("/threads/{thread_id}/messages", response_model=CreateMessageResponse)
 async def create_message(thread_id: str, request: CreateMessageRequest, db: Session = Depends(get_db)):
@@ -156,16 +145,16 @@ async def create_message(thread_id: str, request: CreateMessageRequest, db: Sess
             # Start background task to execute the run
             asyncio.create_task(execute_agent_run(run.id, thread_id, sanitized_content))
 
-            return CreateMessageResponse(run_id=run.id)
+            return CreateMessageResponse(run_id=str(run.id))
         else:
             # For assistant messages, create a dummy run (or handle differently)
             run = create_run_with_defaults(db, thread_id, "completed")
-            return CreateMessageResponse(run_id=run.id)
+            return CreateMessageResponse(run_id=str(run.id))
         
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"error to create message: {str(e)}")
 
 @router.get("/runs/{run_id}/events")
 async def get_run_events(run_id: str, request: Request, db: Session = Depends(get_db)):
@@ -206,7 +195,7 @@ async def get_run_events(run_id: str, request: Request, db: Session = Depends(ge
                         last_event_index += 1
                     
                     # Check if run is completed
-                    if run_data["status"] in ["completed", "failed"]:
+                    if run_data["status"] in ["completed", "error"]:
                         final_data = {
                             "type": "run_completed",
                             "status": run_data["status"]
@@ -217,7 +206,7 @@ async def get_run_events(run_id: str, request: Request, db: Session = Depends(ge
                 else:
                     # Run not in active runs, check database status
                     db.refresh(run)
-                    if run.status in ["completed", "failed"]:
+                    if run.status in ["completed", "error"]:
                         # Send final event if not already sent
                         final_data = {
                             "type": "run_completed",

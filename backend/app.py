@@ -84,7 +84,7 @@ async def bootstrap_database():
                     Base.metadata.create_all(bind=engine)
             else:
                 print("Database tables already exist.")
-                
+
                  # Ensure 'result' column exists in 'runs' table
                 result_column = conn.execute(text(
                     "SELECT column_name FROM information_schema.columns "
@@ -94,7 +94,107 @@ async def bootstrap_database():
                     conn.execute(text("ALTER TABLE runs ADD COLUMN result TEXT"))
                     conn.commit()
                     print("Added 'result' column to runs table.")
-                    
+
+                # Ensure 'title' column exists in 'threads' table
+                title_column = conn.execute(text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name='threads' AND column_name='title'"
+                )).fetchone()
+                if not title_column:
+                    conn.execute(text("ALTER TABLE threads ADD COLUMN title TEXT"))
+                    conn.commit()
+                    print("Added 'title' column to threads table.")
+
+                # Ensure timestamp columns exist on threads table
+                col_result = conn.execute(text(
+                    """
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'threads'
+                    """
+                ))
+                columns = {row[0] for row in col_result}
+
+                alter_statements = []
+                if 'created_at' not in columns:
+                    alter_statements.append(
+                        "ALTER TABLE threads ADD COLUMN created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+                    )
+                if 'updated_at' not in columns:
+                    alter_statements.append(
+                        "ALTER TABLE threads ADD COLUMN updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+                    )
+
+                for stmt in alter_statements:
+                    conn.execute(text(stmt))
+
+                if alter_statements:
+                    conn.commit()
+                    print("Added missing timestamp columns to threads table.")
+
+                # Ensure updated_at trigger exists for threads table
+                trigger_result = conn.execute(text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_trigger WHERE tgname = 'update_threads_updated_at'
+                    )
+                    """
+                ))
+                if not trigger_result.scalar():
+                    conn.execute(text(
+                        """
+                        CREATE TRIGGER update_threads_updated_at
+                        BEFORE UPDATE ON threads
+                        FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+                        """
+                    ))
+                    conn.commit()
+                    print("Created update_threads_updated_at trigger for threads table.")
+
+                # Ensure timestamp columns exist on messages table
+                col_result = conn.execute(text(
+                    """
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'messages'
+                    """
+                ))
+                columns = {row[0] for row in col_result}
+
+                alter_statements = []
+                if 'created_at' not in columns:
+                    alter_statements.append(
+                        "ALTER TABLE messages ADD COLUMN created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+                    )
+                if 'updated_at' not in columns:
+                    alter_statements.append(
+                        "ALTER TABLE messages ADD COLUMN updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+                    )
+
+                for stmt in alter_statements:
+                    conn.execute(text(stmt))
+
+                if alter_statements:
+                    conn.commit()
+                    print("Added missing timestamp columns to messages table.")
+
+                # Ensure updated_at trigger exists for messages table
+                trigger_result = conn.execute(text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_trigger WHERE tgname = 'update_messages_updated_at'
+                    )
+                    """
+                ))
+                if not trigger_result.scalar():
+                    conn.execute(text(
+                        """
+                        CREATE TRIGGER update_messages_updated_at
+                        BEFORE UPDATE ON messages
+                        FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+                        """
+                    ))
+                    conn.commit()
+                    print("Created update_messages_updated_at trigger for messages table.")
+
                 # Ensure timestamp columns exist on users table
                 col_result = conn.execute(text(
                     """
