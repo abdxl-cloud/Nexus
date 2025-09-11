@@ -96,8 +96,8 @@ async def execute_agent_run(run_id: str, thread_id: str, user_message: str):
         # Handle errors
         error_message = f"Error executing run: {str(e)}"
         run_manager.add_event(run_id, "error", {"error": error_message})
-        run_manager.update_status(run_id, "failed")
-        update_run_in_db(db, run_id, "failed", error_message)
+        run_manager.update_status(run_id, "error")
+        update_run_in_db(db, run_id, "error", error_message)
     finally:
         db.close()
 
@@ -116,7 +116,7 @@ async def create_thread(request: CreateThreadRequest, db: Session = Depends(get_
         return CreateThreadResponse(thread_id=str(thread.id))
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create thread: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"error to create thread: {str(e)}")
 
 @router.post("/threads/{thread_id}/messages", response_model=CreateMessageResponse)
 async def create_message(thread_id: str, request: CreateMessageRequest, db: Session = Depends(get_db)):
@@ -154,7 +154,7 @@ async def create_message(thread_id: str, request: CreateMessageRequest, db: Sess
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"error to create message: {str(e)}")
 
 @router.get("/runs/{run_id}/events")
 async def get_run_events(run_id: str, request: Request, db: Session = Depends(get_db)):
@@ -195,7 +195,7 @@ async def get_run_events(run_id: str, request: Request, db: Session = Depends(ge
                         last_event_index += 1
                     
                     # Check if run is completed
-                    if run_data["status"] in ["completed", "failed"]:
+                    if run_data["status"] in ["completed", "error"]:
                         final_data = {
                             "type": "run_completed",
                             "status": run_data["status"]
@@ -206,7 +206,7 @@ async def get_run_events(run_id: str, request: Request, db: Session = Depends(ge
                 else:
                     # Run not in active runs, check database status
                     db.refresh(run)
-                    if run.status in ["completed", "failed"]:
+                    if run.status in ["completed", "error"]:
                         # Send final event if not already sent
                         final_data = {
                             "type": "run_completed",

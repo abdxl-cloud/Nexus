@@ -136,7 +136,7 @@ class AgentLoop:
                 events.append({"type": "tool_call", "tool_call": tool_call})
                 
                 tool_result = await self._execute_tool_call(tool_call)
-                events.append({"type": "tool_result", "result": tool_result})
+                events.append({"type": "tool_result", "result": tool_result.model_dump()})
                 
                 # Add tool result as message
                 current_messages.append({

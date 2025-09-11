@@ -2,7 +2,7 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Union
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -22,9 +22,17 @@ class ToolResult(BaseModel):
 # Base Tool Class
 class BaseTool(ABC):
     """Base class for all tools"""
-    
-    def __init__(self):
-        self.name: str = self.__class__.__name__.lower().replace('tool', '')
+
+    def __init__(self, name: Optional[str] = None) -> None:
+        # Allow subclasses to specify an explicit name while falling back to a
+        # derived version of the class name (e.g. ``WebSearchTool`` →
+        # ``websearch``). ``getattr`` lets subclasses set ``name`` as a class
+        # attribute prior to calling ``super().__init__``.
+        self.name: str = (
+            name
+            or getattr(self, "name", None)
+            or self.__class__.__name__.lower().replace("tool", "")
+        )
         self.description: str = self._get_description()
         self.schema: Dict[str, Any] = self._get_schema()
     
@@ -50,7 +58,7 @@ class BaseTool(ABC):
             "description": self.description,
             "schema": self.schema
         }
-    
+            
 # Import concrete tools after base class definitions to avoid circular imports
 from .web_search import WebSearchTool
 from .browser import BrowserTool

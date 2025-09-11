@@ -221,7 +221,7 @@ async def wait_for_run_completion(run_id: str, timeout: int = 300) -> bool:
         if not run_data:
             return False
         
-        if run_data["status"] in ["completed", "failed"]:
+        if run_data["status"] in ["completed", "error"]:
             return True
         
         # Check timeout
