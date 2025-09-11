@@ -2,7 +2,7 @@
 
 import uuid
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -16,8 +16,20 @@ RunData = Dict[str, Any]
 class RunManager:
     """Manages active runs and their events"""
     
-    def __init__(self):
+    def __init__(self, retention_seconds: int = 300):
+        # Runs currently streaming
         self.active_runs: Dict[str, RunData] = {}
+        # Completed runs preserved for later inspection
+        self.completed_runs: Dict[str, RunData] = {}
+        self.retention_seconds = retention_seconds
+
+    def _cleanup_completed(self) -> None:
+        """Remove expired completed runs"""
+        now = datetime.utcnow()
+        expired = [rid for rid, data in self.completed_runs.items()
+                   if data.get("expires_at") and data["expires_at"] < now]
+        for rid in expired:
+            del self.completed_runs[rid]
     
     def create_run_data(self, run_id: str, thread_id: str, user_message: str) -> RunData:
         """Create initial run data structure"""
@@ -33,33 +45,51 @@ class RunManager:
     
     def add_event(self, run_id: str, event_type: str, data: Any) -> None:
         """Add an event to a run"""
+        run_store = None
         if run_id in self.active_runs:
+            run_store = self.active_runs
+        elif run_id in self.completed_runs:
+            run_store = self.completed_runs
+        if run_store is not None:
             event = {
                 "event": event_type,
                 "data": data,
                 "timestamp": datetime.utcnow().isoformat()
             }
-            self.active_runs[run_id]["events"].append(event)
-    
+            run_store[run_id]["events"].append(event)
+
     def update_status(self, run_id: str, status: str) -> None:
-        """Update run status"""
+        """Update run status and move to completed storage when finished"""
         if run_id in self.active_runs:
-            self.active_runs[run_id]["status"] = status
-            self.active_runs[run_id]["updated_at"] = datetime.utcnow().isoformat()
+            run_data = self.active_runs[run_id]
+            run_data["status"] = status
+            run_data["updated_at"] = datetime.utcnow().isoformat()
+            if status in ["completed", "failed"]:
+                run_data["expires_at"] = datetime.utcnow() + timedelta(seconds=self.retention_seconds)
+                self.completed_runs[run_id] = run_data
+                del self.active_runs[run_id]
+        elif run_id in self.completed_runs:
+            run_data = self.completed_runs[run_id]
+            run_data["status"] = status
+            run_data["updated_at"] = datetime.utcnow().isoformat()
     
     def get_run_data(self, run_id: str) -> Optional[RunData]:
         """Get run data by ID"""
-        return self.active_runs.get(run_id)
-    
+        self._cleanup_completed()
+        return self.active_runs.get(run_id) or self.completed_runs.get(run_id)
+
     def cleanup_run(self, run_id: str) -> None:
         """Remove run data from memory"""
         if run_id in self.active_runs:
             del self.active_runs[run_id]
-    
+        if run_id in self.completed_runs:
+            del self.completed_runs[run_id]
+
     def get_events_since(self, run_id: str, last_index: int) -> List[RunEvent]:
         """Get events since a specific index"""
-        if run_id in self.active_runs:
-            events = self.active_runs[run_id]["events"]
+        run_data = self.get_run_data(run_id)
+        if run_data:
+            events = run_data["events"]
             return events[last_index:]
         return []
 
